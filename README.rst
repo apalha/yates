@@ -3,6 +3,8 @@
 =========
 
 .. image:: http://palha.org/wp-content/uploads/2015/12/x_point_gs_solution.png
+    :width: 300px
+    :align: center
 
 Description
 -----------

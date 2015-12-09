@@ -1,8 +1,8 @@
-=====
-YATES
-=====
+=========
+**YATES**
+=========
 
-![Alt text](http://palha.org/wp-content/uploads/2015/12/x_point_gs_solution.png)
+.. image:: http://palha.org/wp-content/uploads/2015/12/x_point_gs_solution.png
 
 Description
 -----------

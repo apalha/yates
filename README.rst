@@ -6,18 +6,27 @@
     :width: 200px
     :align: center
 
+|
+|
+
 Description
 -----------
 
 The YATES repository contains the source code for the YATES transport equilibrium solver for tokamak plasmas.
+
+|
+|
 
 Authors
 -------
 
 YATES is developed by
 
-  * Artur Palha
-  * Federico Felici
+* Artur Palha
+* Federico Felici
+
+|
+|
 
 Licence
 -------
@@ -27,10 +36,16 @@ later version.
 
 YATES is Copyright (2015) by the authors.
 
+|
+|
+
 Documentation
 -------------
 
 See [wiki](https://bitbucket.org/apalha/yates/wiki) (still under construction).
+
+|
+|
 
 Installation
 ------------
@@ -39,6 +54,9 @@ YATES requires a compatible installation of `FEniCS <http://www.fenicsproject.or
 The development version follows the development cycle of `FEniCS <http://www.fenicsproject.org/>`_.
 
 To install simply download the module files and add the directory to PYTHONPATH
+
+|
+|
 
 Contact
 -------

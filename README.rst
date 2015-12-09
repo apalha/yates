@@ -67,4 +67,4 @@ The latest version of this software can be obtained from
 
 Please report bugs and other issues through the issue tracker at:
 
-  `https://bitbucket.org/apalha/issues <https://bitbucket.org/apalha/issues>`_
+  `https://bitbucket.org/apalha/yates/issues?status=new&status=open <https://bitbucket.org/apalha/yates/issues?status=new&status=open>`_

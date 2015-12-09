@@ -1,9 +1,9 @@
 =========
 **YATES**
 =========
-
+|
 .. image:: http://palha.org/wp-content/uploads/2015/12/x_point_gs_solution.png
-    :width: 300px
+    :width: 200px
     :align: center
 
 Description

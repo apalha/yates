@@ -42,7 +42,7 @@ YATES is Copyright (2015) by the authors.
 Documentation
 -------------
 
-See [wiki](https://bitbucket.org/apalha/yates/wiki) (still under construction).
+See the `wiki <https://bitbucket.org/apalha/yates/wiki>`_ (still under construction).
 
 |
 |
@@ -63,8 +63,8 @@ Contact
 
 The latest version of this software can be obtained from
 
-  https://bitbucket.org/apalha/yates
+  `https://bitbucket.org/apalha/yates <https://bitbucket.org/apalha/yates>`_
 
 Please report bugs and other issues through the issue tracker at:
 
-  https://bitbucket.org/apalha/yates/issues
+  `https://bitbucket.org/apalha/issues <https://bitbucket.org/apalha/issues>`_

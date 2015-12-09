@@ -9,47 +9,44 @@
 Description
 -----------
 
-The fenicstools repository contains tools for the FEniCS problem solving environment.
+The YATES repository contains the source code for the YATES transport equilibrium solver for tokamak plasmas.
 
 Authors
 -------
 
-fenicstools is developed by
+YATES is developed by
 
-  * Mikael Mortensen
-  * Miroslav Kuchta
+  * Artur Palha
+  * Federico Felici
 
 Licence
 -------
 
-fenicstools is licensed under the GNU GPL, version 3 or (at your option) any
+YATES is licensed under the GNU GPL, version 3 or (at your option) any
 later version.
 
-fenicstools is Copyright (2013-2015) by the authors.
+YATES is Copyright (2015) by the authors.
 
 Documentation
 -------------
 
-See [wiki](https://github.com/mikaem/fenicstools/wiki)
+See [wiki](https://bitbucket.org/apalha/yates/wiki) (still under construction).
 
 Installation
 ------------
 
-fenicstools requires a compatible installation of FEniCS, see the releases.
-The development version follows the development cycle of FEniCS, see
-www.fenicsproject.org.
+YATES requires a compatible installation of `FEniCS <http://www.fenicsproject.org/>`_, see the releases.
+The development version follows the development cycle of `FEniCS <http://www.fenicsproject.org/>`_.
 
-To install simply run
-
-  python setup.py install --prefix=/path/to/your/favourite/site-packages
+To install simply download the module files and add the directory to PYTHONPATH
 
 Contact
 -------
 
 The latest version of this software can be obtained from
 
-  https://github.com/mikaem/fenicstools
+  https://bitbucket.org/apalha/yates
 
 Please report bugs and other issues through the issue tracker at:
 
-  https://github.com/mikaem/fenicstools/issues
+  https://bitbucket.org/apalha/yates/issues

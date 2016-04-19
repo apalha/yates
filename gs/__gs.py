@@ -25,6 +25,7 @@ References
 :Copyright: Copyright(C) 2015 apalha
 :License: GNU GPL version 3 or any later version
 """
+
 from traits.trait_types import self
 
 """
@@ -35,15 +36,13 @@ Reviews
 """
 
 __all__ = [
-           'GS_Solver', 'PlasmaShape','DolfinFunction', # classes
-           'PythonFunction1D','PythonFunction2D',
-           'plasma_boundary_pataki', 'plasma_boundary_xpoint_iter', # functions
-           'DEFAULT_SOLVER_PARAMETERS','DEFAULT_OUTPUT_PARAMETERS', # constants
-           'output_parameters' # variables
+           'GS_Solver', 'PlasmaShape', 'DolfinFunction', # classes
+           'PythonFunction1D', 'PythonFunction2D',
+           'plasma_boundary_pataki', 'plasma_boundary_xpoint_iter', # boundary functions
+           'psi_soloviev_pataki'                                   # GS analytical solutions
           ]
 
 import dolfin
-import fenicstools
 import numpy
 import triangle
 import scipy.sparse
@@ -55,33 +54,37 @@ import matplotlib.tri as tri
 import time
 import sys
 
-# Constants -------------------------------------------------------------------
+from yates import constants
+import yates.config as config
 
-# default output parameters
-DEFAULT_OUTPUT_PARAMETERS = {'runtime_info':True,            # show functions' output information and status at runtime
-                             'timing':True,                  # enable timing of functions
-                             'plotting':True}                # enable plotting
 
-# default solver parameters
-# parameters related to the GS solver
-DEFAULT_SOLVER_PARAMETERS = {'plasma_boundary':'fixed',                # type of boundary condition for plasma: fixed|free
-                             'linear_algebra_backend':'petsc',         # the linear algebra used by the solver: petsc|ublas|scipy
-                             'far_field_bc':False,                      # use far field boundary conditions (vanishing fields at infinity) or prescribed Dirichlet boundary conditions: True|False
-                             'nonlinear_solver':'Newton'}              # use Newton solver to solve the nonlinear system: Picard|Newton
 
-# physical constants
-MU0 = 1.0#numpy.pi*4.0*1.0e-7 # vacuum permeability
-MU0_INV = 1.0/MU0 # inverse of vacuum permeability
+# Constants ---------------------------------------------------------
+#                                               <editor-fold desc="">
 
-#------------------------------------------------------------------------------
+# -- Module wide constants ------------------------------------------
+#                                               <editor-fold desc="">
 
-# Module-wide variables -------------------------------------------------------
+DEFAULT_SOLVER_PARAMETERS = constants.default_parameters.GS_SOLVER
 
-output_parameters = DEFAULT_OUTPUT_PARAMETERS
+# ---------------------------------------------------- </editor-fold>
 
-#------------------------------------------------------------------------------
 
-# Classes ---------------------------------------------------------------------
+# -- Physical constants ---------------------------------------------
+#                                               <editor-fold desc="">
+
+MU0 = constants.physics.MU0 # vacuum permeability
+MU0_INV = constants.physics.MU0_INV # inverse of vacuum permeability
+
+# ---------------------------------------------------- </editor-fold>
+
+
+# ---------------------------------------------------- </editor-fold>
+
+
+
+# Classes -----------------------------------------------------------
+#                                               <editor-fold desc="">
 
 class GS_Solver():
     r"""
@@ -213,7 +216,7 @@ class GS_Solver():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing = {} # initialize timing dictionary, this is only done in __init__
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
@@ -249,10 +252,10 @@ class GS_Solver():
             self.psi_vector = numpy.zeros(self.psi.vector().array().shape)
         else:
             self.psi_vector = self.psi.vector()
-            
+
         # if a newton solver is used to solve for the nonlinearity then we
         # need to solve for the variation between two iterations, delta_psi
-        if self.solver_parameters['nonlinear_solver'] == 'Newton': 
+        if self.solver_parameters['nonlinear_solver'] == 'Newton':
             self.delta_psi = DolfinFunction(self._V)
             if self.solver_parameters['linear_algebra_backend'] == 'scipy':
                 self.delta_psi_vector = numpy.zeros(self.delta_psi.vector().array().shape)
@@ -266,14 +269,14 @@ class GS_Solver():
                                                # the nonlinearity then the derivative of
                                                # the current density with respect to psi
                                                # must be defined
-            
+
         self._b = dolfin.Function(self._V)
         if self.solver_parameters['linear_algebra_backend'] == 'scipy':
             self.j_vector = numpy.zeros(self.j.vector().array().shape)
             if self.solver_parameters['nonlinear_solver'] == 'Newton':
                 self.dj_vector = numpy.zeros(self.dj.vector().array().shape)
             self.b_vector = numpy.zeros(self.b.vector().array().shape)
-            
+
         else:
             self.j_vector = self.j.vector()
             if self.solver_parameters['nonlinear_solver'] == 'Newton':
@@ -283,13 +286,13 @@ class GS_Solver():
         # define the bilinear form of the Grad-Shafranov equation
         self._inv_mu0r = dolfin.Expression('mu0_inv/x[0]', mu0_inv=MU0_INV) # this is the term \frac{1}{\mu_{0}r}
         self.A_form = dolfin.inner(self._inv_mu0r*dolfin.grad(self._v_trial), dolfin.grad(self._v_test))*dolfin.dx
-        
+
         if self.solver_parameters['nonlinear_solver'] == 'Newton':
             # the Jacobian term associated to the current density
             self.A_dj_form = dolfin.inner(self.dj*self._v_trial,self._v_test)*dolfin.dx
             # the right hand side associated to the previous iteration
             self.B_form = dolfin.inner(self.j,self._v_test)*dolfin.dx
-        
+
         # assemble the bilinear form into a matrix
         self.A = dolfin.assemble(self.A_form)
 
@@ -320,8 +323,8 @@ class GS_Solver():
             # conditions to the system matrix without knowing a priori the boundary
             # condition values. This speeds up the process.
             self.bc.apply(self.A)
-        
-        if self.solver_parameters['nonlinear_solver'] == 'Picard': 
+
+        if self.solver_parameters['nonlinear_solver'] == 'Picard':
             # setup the LU solver so that the LU decomposition is pre-computed and saved
             if self.solver_parameters['linear_algebra_backend'] == 'petsc':
                 self._solver = dolfin.LUSolver('petsc')
@@ -335,12 +338,12 @@ class GS_Solver():
             self._solver.solve(self.psi_vector, self.j_vector) # solve once just to avoid any overhead in initializations
                                                                # self.j_vector is still zero, therefore self.psi_vector will
                                                                # remain 0
-        
-        elif self.solver_parameters['nonlinear_solver'] == 'Newton': 
-            print 'Optimization for Newton solver needed!'            
-            
+
+        elif self.solver_parameters['nonlinear_solver'] == 'Newton':
+            print 'Optimization for Newton solver needed!'
+
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -398,7 +401,7 @@ class GS_Solver():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -408,9 +411,9 @@ class GS_Solver():
         elif self.solver_parameters['nonlinear_solver'] == 'Newton':
             self.__solve_step_newton(j,dj,sigma=sigma, bc_function=bc_function)
 
-        
+
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -459,7 +462,7 @@ class GS_Solver():
         # use psi(r,z) and j(r,z,psi) to compute j(r,z)
         self.j_vector[:] = sigma*j(self._vertices_x,self._vertices_y,self.psi_vector.array())
 
-        
+
         # setup the right hand side
         self._b_vector = self._M*self.j_vector
         if bc_function == None:
@@ -467,9 +470,9 @@ class GS_Solver():
         else:
             self._b_vector[self.bc_dof] = bc_function(self.bc_coordinates[:,0],self.bc_coordinates[:,1])
 
-        
+
         # solve one step
-        self._solver.solve(self.psi_vector, self._b_vector) 
+        self._solver.solve(self.psi_vector, self._b_vector)
 
 
     def __solve_step_newton(self, j, dj, sigma, bc_function):
@@ -521,12 +524,12 @@ class GS_Solver():
         # use psi(r,z) and dj(r,z,psi) to compute dj(r,z)
         self.dj_vector[:] = sigma*dj(self._vertices_x,self._vertices_y,self.psi_vector.array())
 
-        
+
         # setup the right hand side
         self._b_vector =  dolfin.assemble(self.B_form) - (self.A*self.psi_vector)
         self._b_vector[self.bc_dof] = 0.0
-        
-        
+
+
         # solve one step
         self.A_dj = dolfin.assemble(self.A_dj_form)
         S = self.A - self.A_dj
@@ -604,7 +607,7 @@ class spLUSolver():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing = {} # initialize timing dictionary, this is only done in __init__
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
@@ -615,7 +618,7 @@ class spLUSolver():
 
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -658,7 +661,7 @@ class spLUSolver():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -678,7 +681,7 @@ class spLUSolver():
         self._operator_LU = scipy.sparse.linalg.splu(self._operator)
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -724,7 +727,7 @@ class spLUSolver():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -734,7 +737,7 @@ class spLUSolver():
 
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -814,7 +817,7 @@ class spLUSolver():
 #         """
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing = {} # initialize timing dictionary, this is only done in __init__
 #             start_time = time.time() # start the timer for this function
 #         #---------------------------------------------------------------------------------------------------------------
@@ -840,7 +843,7 @@ class spLUSolver():
 #         self.__f_at_x[self.__dofs2vertex] = self.__f_vector.array()
 #
 #         # timing end ---------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -889,14 +892,14 @@ class spLUSolver():
 #         """
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             start_time = time.time() # start the timer for this function
 #         #---------------------------------------------------------------------------------------------------------------
 #
 #         f_evaluated = numpy.interp(x,self.__x,self.__f_at_x)
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -948,7 +951,7 @@ class spLUSolver():
 #         """
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             start_time = time.time() # start the timer for this function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -956,7 +959,7 @@ class spLUSolver():
 #         self.__f_vector = self.f.vector()
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
 #         #---------------------------------------------------------------------------------------------------------------
 
@@ -1030,7 +1033,7 @@ class spLUSolver():
 #         """
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing = {} # initialize timing dictionary, this is only done in __init__
 #             start_time = time.time() # start the timer for this function
 #         #---------------------------------------------------------------------------------------------------------------
@@ -1043,7 +1046,7 @@ class spLUSolver():
 #         self.__V = self.f.function_space()
 #
 #         # timing end ---------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -1094,7 +1097,7 @@ class spLUSolver():
 #         """
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             start_time = time.time() # start the timer for this function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -1104,7 +1107,7 @@ class spLUSolver():
 #         f_evaluated = probes.array()
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -1156,7 +1159,7 @@ class spLUSolver():
 #         """
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             start_time = time.time() # start the timer for this function
 #         #---------------------------------------------------------------------------------------------------------------
 #
@@ -1164,7 +1167,7 @@ class spLUSolver():
 #         self.__f_vector = self.f.vector()
 #
 #         # timing start -------------------------------------------------------------------------------------------------
-#         if output_parameters['timing']:
+#         if config.output['timing']:
 #             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
 #         #---------------------------------------------------------------------------------------------------------------
 
@@ -1244,7 +1247,7 @@ class DolfinFunction(dolfin.functions.function.Function):
            adds more functionality to speedup calculations and plotting.
         """
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing = {} # initialize timing dictionary, this is only done in __init__
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
@@ -1271,7 +1274,7 @@ class DolfinFunction(dolfin.functions.function.Function):
             self.triangulation = dolfinmplot.mesh2triang(self.function_space().mesh())
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1323,7 +1326,7 @@ class DolfinFunction(dolfin.functions.function.Function):
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1336,7 +1339,7 @@ class DolfinFunction(dolfin.functions.function.Function):
             f_evaluated = probes.array()
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1387,7 +1390,7 @@ class DolfinFunction(dolfin.functions.function.Function):
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1396,7 +1399,7 @@ class DolfinFunction(dolfin.functions.function.Function):
             self.__f_at_x[self.__dofs2vertex] = self.vector().array()
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1463,7 +1466,7 @@ class PythonFunction1D():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing = {} # initialize timing dictionary, this is only done in __init__
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
@@ -1473,7 +1476,7 @@ class PythonFunction1D():
         self.type = 'python_function'
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1522,14 +1525,14 @@ class PythonFunction1D():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
         f_evaluated = self.f(x)
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1624,14 +1627,14 @@ class PythonFunction1D():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
         self.f = f_new
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1698,7 +1701,7 @@ class PythonFunction2D():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing = {} # initialize timing dictionary, this is only done in __init__
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
@@ -1708,7 +1711,7 @@ class PythonFunction2D():
         self.type = 'python_function'
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1757,14 +1760,14 @@ class PythonFunction2D():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
         f_evaluated = self.f(x,y)
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1858,14 +1861,14 @@ class PythonFunction2D():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
         self.f = f_new
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -1963,7 +1966,7 @@ class PlasmaShape():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing = {} # initialize timing dictionary, this is only done in __init__
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
@@ -1981,7 +1984,7 @@ class PlasmaShape():
 
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -2027,7 +2030,7 @@ class PlasmaShape():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -2050,7 +2053,7 @@ class PlasmaShape():
 
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -2101,7 +2104,7 @@ class PlasmaShape():
         """
 
         # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             start_time = time.time() # start the timer for this function
         #---------------------------------------------------------------------------------------------------------------
 
@@ -2159,21 +2162,29 @@ class PlasmaShape():
 
         mesh_editor.close()
 
-        if output_parameters['runtime_info']:
+        if config.output['runtime_info']:
             print 'Created mesh with %d vertices and %d cells' % (nvertices, ncells)
 
-        if output_parameters['plotting'] and show:
+        if config.output['plotting'] and show:
             dolfin.plot(self.mesh)
             dolfin.interactive()
 
 
         # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
+        if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
+# ---------------------------------------------------- </editor-fold>
 
-# Functions -------------------------------------------------------------------
+
+
+# Functions ---------------------------------------------------------
+#                                               <editor-fold desc="">
+
+
+# -- Plasma boundary ------------------------------------------------
+#                                               <editor-fold desc="">
 
 def boundary(x,on_boundary):
     r"""
@@ -2366,6 +2377,96 @@ def plasma_boundary_xpoint_iter(n):
 
     return r, z
 
+#    ------------------------------------------------- </editor-fold>
+
+
+# -- GS analytical solutions ----------------------------------------
+#                                               <editor-fold desc="">
+
+def psi_soloviev_pataki(r,z,epsilon,kappa,delta):
+    r"""
+    Returns the values of the magnetic flux at the points
+    (r,z) for the soloviev solution in [pataki]_. The models for :math:`p(\psi)` and :math:`f(\psi)` are:
+
+    .. math::
+
+        p = C\psi + P_{0} \quad \mathrm{and} \quad f = f_{0}\,.
+
+    With :math:`C = 1`.
+
+    Usage
+    -----
+    .. code-block :: python
+
+        psi_soloviev_pataki(r,z,epsilon,kappa,delta)
+
+
+    Parameters
+    ----------
+    r : numpy.array, size: (N,M)
+        The r coordinates of the points where to compute the magnetic
+        flux. r \in [0,:math:`\infty`].
+    z : numpy.array, size: (N,M)
+        The z coordinates of the points where to compute the magnetic
+        flux. z \in [-:math:`\infty`,:math:`\infty`].
+    epsilon : float64, size: single value
+              as given in [pataki]_, related to the size of the horizontal
+              axis of the plasma shape.
+    kappa : float64, size: single value
+            as given in [pataki]_, related to the size of the vertical
+            axis of the plasma shape (kappa*epsilon).
+    delta : float64, size: single value
+            as given in [pataki]_, related to the misalignment between the
+            top of the plasma shape and the axis of the plasma shape.
+
+    Returns
+    -------
+    psi : numpy.array, size: [N,M]
+          The computation of the magnetic flux at the points (r,z).
+
+
+    References
+    ----------
+    .. [pataki] Pataki, A., Cerfon, A. J., Freidberg, J. P., Greengard, L., O'Neil, M. (2013).
+                A fast, high-order solver for the Grad-Shafranov equation.
+                Journal of Computational Physics, 243, 28-45. doi:10.1016/j.jcp.2013.02.045
+
+    :First Added:   2016-04-19
+    :Last Modified: 2015-04-19
+    :Copyright:     Copyright (C) 2016 apalha
+    :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+    Reviews:
+    1. First implementation. (apalha, 2016-04-19)
+    """
+
+    # compute parameters
+
+    # convert the epsilon,kappa,delta parameters into d1,d2,d3 parameters
+    # see [pataki] for a full explanation
+    M = numpy.array([[1.0, (1.0 + epsilon)**2, (1.0 + epsilon)**4],
+                     [1.0, (1.0 - epsilon)**2, (1.0 - epsilon)**4],
+                     [1.0, (1.0 - delta*epsilon)**2, ((1.0 - (delta*epsilon))**4)
+                          - 4.0*((1.0 - delta*epsilon)**2) * (kappa**2) * (epsilon**2)]])
+
+    b = -(1.0/8.0)*numpy.array([(1.0 + epsilon)**4, (1.0 - epsilon)**4, (1.0 - delta*epsilon)**4])
+
+    d = numpy.linalg.solve(M,b)
+
+    # compute psi
+    psi = ((r**4)/8.0) + d[0] + d[1]*(r**2) + d[2]*((r**4) - 4.0*(r**2)*(z**2))
+
+    return psi
+
+
+#    ------------------------------------------------- </editor-fold>
+
+
+# -- Aux functions --------------------------------------------------
+#                                               <editor-fold desc="">
 
 def currentFuncName(n=0):
     r"""
@@ -2407,3 +2508,9 @@ def currentFuncName(n=0):
     """
 
     return sys._getframe(n + 1).f_code.co_name
+
+#    ------------------------------------------------- </editor-fold>
+
+
+# ---------------------------------------------------- </editor-fold>
+

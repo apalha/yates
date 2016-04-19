@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-""" __init__ file for yates (Yet Another Transport Equilibrium Solver) module
+""" __init__ file for yates (Yet Another Transport Equilibrium Solver) package
 
 Description
 -----------
-Simply the __init__ file for yates module.
+Simply the __init__ file for yates package.
 
 References
 ----------
@@ -21,4 +21,14 @@ Reviews
 
 """
 
-from __gs import *
+# import all constants
+import constants
+
+# load package options
+import config
+
+# import the grad-shafranov solver
+import gs
+
+# import the configuration variables
+import config

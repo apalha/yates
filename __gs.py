@@ -25,6 +25,7 @@ References
 :Copyright: Copyright(C) 2015 apalha
 :License: GNU GPL version 3 or any later version
 """
+from traits.trait_types import self
 
 """
 Reviews
@@ -36,7 +37,7 @@ Reviews
 __all__ = [
            'GS_Solver', 'PlasmaShape','DolfinFunction', # classes
            'PythonFunction1D','PythonFunction2D',
-           'plasma_boundary_pataki', # functions
+           'plasma_boundary_pataki', 'plasma_boundary_xpoint_iter', # functions
            'DEFAULT_SOLVER_PARAMETERS','DEFAULT_OUTPUT_PARAMETERS', # constants
            'output_parameters' # variables
           ]
@@ -65,7 +66,8 @@ DEFAULT_OUTPUT_PARAMETERS = {'runtime_info':True,            # show functions' o
 # parameters related to the GS solver
 DEFAULT_SOLVER_PARAMETERS = {'plasma_boundary':'fixed',                # type of boundary condition for plasma: fixed|free
                              'linear_algebra_backend':'petsc',         # the linear algebra used by the solver: petsc|ublas|scipy
-                             'far_field_bc':False}                      # use far field boundary conditions (vanishing fields at infinity) or prescribed Dirichlet boundary conditions: True|False
+                             'far_field_bc':False,                      # use far field boundary conditions (vanishing fields at infinity) or prescribed Dirichlet boundary conditions: True|False
+                             'nonlinear_solver':'Newton'}              # use Newton solver to solve the nonlinear system: Picard|Newton
 
 # physical constants
 MU0 = 1.0#numpy.pi*4.0*1.0e-7 # vacuum permeability
@@ -132,37 +134,37 @@ class GS_Solver():
                         1xxx : coil number xxx
                         2xxx : conductor number xxx
 
-    parameters : dict
-                 Contains the following internal definitions for the solver
+    solve_parameters : dict
+                       Contains the following internal definitions for the solver
 
-                     plasma_boundary : string, single value
-                                        A string specifying the type of boundary used for the plasma
-                                        domain. The different options are: ::
+                       plasma_boundary : string, single value
+                                         A string specifying the type of boundary used for the plasma
+                                         domain. The different options are: ::
 
-                                        'free' : plasma boundary is determined from the computation.
-                                        'fixed : plasma boundary is prescribed by the user as the boundary of the
-                                                 computational domain.
+                                         'free' : plasma boundary is determined from the computation.
+                                         'fixed : plasma boundary is prescribed by the user as the boundary of the
+                                                  computational domain.
 
-                     linear_algebra_backend : string, single value
-                                              Specifies which linear algebra backend to use while solving the Grad-Shafranov problem. Different
-                                              backends have different performances in different machines and environments. The user should test
-                                              different options to identify which one performs better. Possible options are: ::
+                       linear_algebra_backend : string, single value
+                                                Specifies which linear algebra backend to use while solving the Grad-Shafranov problem. Different
+                                                backends have different performances in different machines and environments. The user should test
+                                                different options to identify which one performs better. Possible options are: ::
 
-                                              'petsc' : for the PETSc linear algebra backend
-                                              'ublas' : for the uBLAS linear algebra backend
-                                              'scipy' : for the SciPy linear algebra backend
+                                                'petsc' : for the PETSc linear algebra backend
+                                                'ublas' : for the uBLAS linear algebra backend
+                                                'scipy' : for the SciPy linear algebra backend
 
-                     far_field_bc : bool, single value
-                                    Specifies if far field boundary conditions are to be used or not. If True then
-                                    boundary conditions of vanishing fields at infinity are used. If False, prescribed
-                                    Dirichlet boundary conditions are used.
-
-                    j_plasma : int, single value
-                               Specifies the type of current density used for input in the solve step: ::
-
-                                   0 : j = j(\psi)
-                                   1 : j = j(r,z)
-                                   2 : j = j_{mn}
+                       far_field_bc : bool, single value
+                                      Specifies if far field boundary conditions are to be used or not. If True then
+                                      boundary conditions of vanishing fields at infinity are used. If False, prescribed
+                                      Dirichlet boundary conditions are used.
+                                      
+                       nonlinear_solver : string, single value
+                                          Specifies which nonlinear solver is used.
+                                          Possible options are: ::
+                                          
+                                          'Newton' : Newton solver
+                                          'Picard' : Picard (fixed point) iterative solver
 
 
     Attributes
@@ -247,21 +249,47 @@ class GS_Solver():
             self.psi_vector = numpy.zeros(self.psi.vector().array().shape)
         else:
             self.psi_vector = self.psi.vector()
+            
+        # if a newton solver is used to solve for the nonlinearity then we
+        # need to solve for the variation between two iterations, delta_psi
+        if self.solver_parameters['nonlinear_solver'] == 'Newton': 
+            self.delta_psi = DolfinFunction(self._V)
+            if self.solver_parameters['linear_algebra_backend'] == 'scipy':
+                self.delta_psi_vector = numpy.zeros(self.delta_psi.vector().array().shape)
+            else:
+                self.delta_psi_vector = self.delta_psi.vector()
 
         # define the current function and the right hand side function and their associated vectors
         self.j = dolfin.Function(self._V)
+        if self.solver_parameters['nonlinear_solver'] == 'Newton':
+            self.dj = dolfin.Function(self._V) # if Newton method is used to solve
+                                               # the nonlinearity then the derivative of
+                                               # the current density with respect to psi
+                                               # must be defined
+            
         self._b = dolfin.Function(self._V)
         if self.solver_parameters['linear_algebra_backend'] == 'scipy':
             self.j_vector = numpy.zeros(self.j.vector().array().shape)
+            if self.solver_parameters['nonlinear_solver'] == 'Newton':
+                self.dj_vector = numpy.zeros(self.dj.vector().array().shape)
             self.b_vector = numpy.zeros(self.b.vector().array().shape)
+            
         else:
             self.j_vector = self.j.vector()
+            if self.solver_parameters['nonlinear_solver'] == 'Newton':
+                self.dj_vector = self.dj.vector()
             self._b_vector = self._b.vector()
 
         # define the bilinear form of the Grad-Shafranov equation
         self._inv_mu0r = dolfin.Expression('mu0_inv/x[0]', mu0_inv=MU0_INV) # this is the term \frac{1}{\mu_{0}r}
         self.A_form = dolfin.inner(self._inv_mu0r*dolfin.grad(self._v_trial), dolfin.grad(self._v_test))*dolfin.dx
-
+        
+        if self.solver_parameters['nonlinear_solver'] == 'Newton':
+            # the Jacobian term associated to the current density
+            self.A_dj_form = dolfin.inner(self.dj*self._v_trial,self._v_test)*dolfin.dx
+            # the right hand side associated to the previous iteration
+            self.B_form = dolfin.inner(self.j,self._v_test)*dolfin.dx
+        
         # assemble the bilinear form into a matrix
         self.A = dolfin.assemble(self.A_form)
 
@@ -292,45 +320,117 @@ class GS_Solver():
             # conditions to the system matrix without knowing a priori the boundary
             # condition values. This speeds up the process.
             self.bc.apply(self.A)
+        
+        if self.solver_parameters['nonlinear_solver'] == 'Picard': 
+            # setup the LU solver so that the LU decomposition is pre-computed and saved
+            if self.solver_parameters['linear_algebra_backend'] == 'petsc':
+                self._solver = dolfin.LUSolver('petsc')
+            elif self.solver_parameters['linear_algebra_backend'] == 'ublas':
+                self._solver = dolfin.LUSolver('umfpack')
+            elif self.solver_parameters['linear_algebra_backend'] == 'scipy':
+                self._solver = spLUSolver()
 
-        # setup the LU solver so that the LU decomposition is pre-computed and saved
-        if self.solver_parameters['linear_algebra_backend'] == 'petsc':
-            self._solver = dolfin.LUSolver('petsc')
-        elif self.solver_parameters['linear_algebra_backend'] == 'ublas':
-            self._solver = dolfin.LUSolver('umfpack')
-        elif self.solver_parameters['linear_algebra_backend'] == 'scipy':
-            self._solver = spLUSolver()
-
-        self._solver.parameters['reuse_factorization'] = True # reuse factorization
-        self._solver.set_operator(self.A)
-        self._solver.solve(self.psi_vector, self.j_vector) # solve once just to avoid any overhead in initializations
-                                                           # self.j_vector is still zero, therefore self.psi_vector will
-                                                           # remain 0
-
+            self._solver.parameters['reuse_factorization'] = True # reuse factorization
+            self._solver.set_operator(self.A)
+            self._solver.solve(self.psi_vector, self.j_vector) # solve once just to avoid any overhead in initializations
+                                                               # self.j_vector is still zero, therefore self.psi_vector will
+                                                               # remain 0
+        
+        elif self.solver_parameters['nonlinear_solver'] == 'Newton': 
+            print 'Optimization for Newton solver needed!'            
+            
         # timing end ---------------------------------------------------------------------------------------------------
         if output_parameters['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
-    def solve_step(self, j, bc_function=None):
+
+    def solve_step(self, j, dj=None, sigma=1.0, bc_function=None):
         r"""
         Solve the Grad-Shafranov equation given the right hand side j (current sources). This function assumes j to
         not depend on \psi. This function therefore can be used to solve one step of a nonlinear
-        Grad-Shafranov equation used, for example in fixed point iteration.
+        Grad-Shafranov equation used, for example in fixed point iteration or Newton.
 
         Usage
         -----
         .. code-block :: python
 
-            self.solve_step(j)
+            self.solve_step(j,dj=None,sigma=1.0,bc_function=None)
 
 
         Parameters
         ----------
-        j : python function evaluatable at \psi or (r,z)
-            The plasma current density can be of the type: ::
-                j = j(\psi) : this corresponds only to j inside the plasma domain
-                j = j(r,z)  : (r,z) only valid in the plasma domain
+        j  : python function evaluatable at \psi and (r,z), j(r,z,psi)
+             Represents the toroidal current density
+        dj : python function evaluatable at \psi and (r,z), dj(r,z,psi)
+             Represents the derivative of j with respect to psi
+
+        Returns
+        -------
+
+
+
+        Attributes
+        ----------
+        psi
+        psi_vector
+        j
+        j_vector
+        dj
+        dj_vector
+
+        :First Added:   2015-04-13
+        :Last Modified: 2016-04-18
+        :Copyright:     Copyright (C) 2015 apalha
+        :License:       GNU GPL version 3 or any later version
+
+        """
+
+        """
+        Reviews:
+        1. First implementation. (apalha, 2015-04-13)
+        2. Changed function from solve to solve_step, because this function is just one step of a nonlinear solver.
+           This is important because in the future we wish to couple it to a transport solver and we need access
+           kernel functions in order to design coupled solvers.
+        3. j is now always a python function of (r,z,psi).
+        4. Expanded the function to include a Newton solver to solve the
+           nonlinearity. (apalha, 2016-04-18)
+        """
+
+        # timing start -------------------------------------------------------------------------------------------------
+        if output_parameters['timing']:
+            start_time = time.time() # start the timer for this function
+        #---------------------------------------------------------------------------------------------------------------
+
+        if self.solver_parameters['nonlinear_solver'] == 'Picard':
+            self.__solve_step_picard(j,sigma=sigma, bc_function=bc_function)
+
+        elif self.solver_parameters['nonlinear_solver'] == 'Newton':
+            self.__solve_step_newton(j,dj,sigma=sigma, bc_function=bc_function)
+
+        
+        # timing end ---------------------------------------------------------------------------------------------------
+        if output_parameters['timing']:
+            self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
+        #---------------------------------------------------------------------------------------------------------------
+
+
+    def __solve_step_picard(self, j, sigma, bc_function):
+        r"""
+        Solve one step of the Picard iteration of the nonlinear Grad-Shafranov equation
+        given the right hand side j (current sources).
+
+        Usage
+        -----
+        .. code-block :: python
+
+            self.solve_step(j,sigma=1.0,bc_function=None)
+
+
+        Parameters
+        ----------
+        j  : python function evaluatable at \psi and (r,z), j(r,z,psi)
+             Represents the toroidal current density
 
         Returns
         -------
@@ -345,7 +445,7 @@ class GS_Solver():
         j_vector
 
         :First Added:   2015-04-13
-        :Last Modified: 2015-12-03
+        :Last Modified: 2016-04-18
         :Copyright:     Copyright (C) 2015 apalha
         :License:       GNU GPL version 3 or any later version
 
@@ -353,40 +453,92 @@ class GS_Solver():
 
         """
         Reviews:
-        1. First implementation. (apalha, 2015-04-13)
-        2. Changed function from solve to solve_step, because this function is just one step of a nonlinear solver.
-           This is important because in the future we wish to couple it to a transport solver and we need access
-           kernel functions in order to design coupled solvers.
+        1. First implementation. (apalha, 2016-04-18)
         """
 
-        # timing start -------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
-            start_time = time.time() # start the timer for this function
-        #---------------------------------------------------------------------------------------------------------------
+        # use psi(r,z) and j(r,z,psi) to compute j(r,z)
+        self.j_vector[:] = sigma*j(self._vertices_x,self._vertices_y,self.psi_vector.array())
 
-        # the first step is to identify if we have j(\psi) or j(r,z) in order to know how to transfer it into self.j
-        # and/or self.j_vector
-        if j.geometric_dimension() == 1:
-            # use psi(r,z) and j(psi) to compute j(r,z)
-            self.j_vector[:] = j(self.psi_vector.array())
-        else:
-            # compute j(r,z) in the solver
-            self.j_vector[:] = j(self._vertices_x,self._vertices_y)
-
+        
+        # setup the right hand side
         self._b_vector = self._M*self.j_vector
         if bc_function == None:
             self._b_vector[self.bc_dof] = 0.0
         else:
             self._b_vector[self.bc_dof] = bc_function(self.bc_coordinates[:,0],self.bc_coordinates[:,1])
 
-        self._solver.solve(self.psi_vector, self._b_vector) # solve once just to avoid any overhead in initializations
-                                                           # self.j_vector is still zero, therefore self.psi_vector will
-                                                           # remain 0
+        
+        # solve one step
+        self._solver.solve(self.psi_vector, self._b_vector) 
 
-        # timing end ---------------------------------------------------------------------------------------------------
-        if output_parameters['timing']:
-            self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
-        #---------------------------------------------------------------------------------------------------------------
+
+    def __solve_step_newton(self, j, dj, sigma, bc_function):
+        r"""
+        Solve one step of the Newton iteration of the nonlinear Grad-Shafranov equation
+        given the right hand side j (current sources).
+
+        Usage
+        -----
+        .. code-block :: python
+
+            self.solve_step(j,dj,sigma=1.0)
+
+
+        Parameters
+        ----------
+        j  : python function evaluatable at \psi and (r,z), j(r,z,psi)
+             Represents the toroidal current density
+        dj : python function evaluatable at \psi and (r,z), dj(r,z,psi)
+             Represents the derivative of j with respect to psi
+
+        Returns
+        -------
+
+
+        Attributes
+        ----------
+        psi
+        psi_vector
+        j
+        j_vector
+        dj
+        dj_vector
+
+        :First Added:   2016-04-18
+        :Last Modified: 2016-04-18
+        :Copyright:     Copyright (C) 2015 apalha
+        :License:       GNU GPL version 3 or any later version
+
+        """
+
+        """
+        Reviews:
+        1. First implementation. (apalha, 2016-04-18)
+        """
+
+        # use psi(r,z) and j(r,z,psi) to compute j(r,z)
+        self.j_vector[:] = sigma*j(self._vertices_x,self._vertices_y,self.psi_vector.array())
+        # use psi(r,z) and dj(r,z,psi) to compute dj(r,z)
+        self.dj_vector[:] = sigma*dj(self._vertices_x,self._vertices_y,self.psi_vector.array())
+
+        
+        # setup the right hand side
+        self._b_vector =  dolfin.assemble(self.B_form) - (self.A*self.psi_vector)
+        self._b_vector[self.bc_dof] = 0.0
+        
+        
+        # solve one step
+        self.A_dj = dolfin.assemble(self.A_dj_form)
+        S = self.A - self.A_dj
+        self.bc.apply(S)
+        dolfin.solve(S, self.delta_psi_vector, self._b_vector)
+
+
+
+        # update psi to the new value, using the corrections from the newton solver
+        self.psi_vector[:] = self.psi_vector[:] + self.delta_psi_vector[:]
+
+
 
 
 class spLUSolver():
@@ -1736,7 +1888,9 @@ class PlasmaShape():
     shape : string
         The identification of the plasma shape to generate.
         The codes identifying the different shapes are: ::
-            "pataki_iter" : ITER like smooth plasma shape as presented in [pataki2013].
+            "pataki_iter_1" : ITER like smooth plasma shape as presented in [pataki2013] (circle).
+            "pataki_iter_2" : ITER like smooth plasma shape as presented in [pataki2013] (intermediate elongation).
+            "pataki_iter_3" : ITER like smooth plasma shape as presented in [pataki2013] (full elongation).
             "pataki_nstx" : NSTX like smooth plasma shape as presented in [pataki2013].
             "xpoint_iter" : ITER like x-point plasma shape as presented in [cerfon2010].
 
@@ -1748,7 +1902,10 @@ class PlasmaShape():
     shape : string
         The identification of the plasma shape to generate.
         The codes identifying the different shapes are: ::
-            "pataki_iter" : ITER like smooth plasma shape as presented in [pataki2013].
+            "pataki_iter_0" : Small circle plasma shape corresponding to a large aspect ratio [pataki2013].
+            "pataki_iter_1" : ITER like smooth plasma shape as presented in [pataki2013] (circle).
+            "pataki_iter_2" : ITER like smooth plasma shape as presented in [pataki2013] (intermediate elongation).
+            "pataki_iter_3" : ITER like smooth plasma shape as presented in [pataki2013] (full elongation).
             "pataki_nstx" : NSTX like smooth plasma shape as presented in [pataki2013].
             "xpoint_iter" : ITER like x-point plasma shape as presented in [cerfon2010].
 
@@ -1878,8 +2035,18 @@ class PlasmaShape():
         self.n = n # update the number of points
 
         # compute the n boundary points
-        if self.shape == 'pataki_iter':
+        if self.shape == 'pataki_iter_0':
+            self.r, self.z = plasma_boundary_pataki(self.n,0.00001,1.0,0.0)
+        elif self.shape == 'pataki_iter_1':
+            self.r, self.z = plasma_boundary_pataki(self.n,0.32,1.0,0.0)
+        elif self.shape == 'pataki_iter_2':
+            self.r, self.z = plasma_boundary_pataki(self.n,0.32,1.0,0.33)
+        elif self.shape == 'pataki_iter_3':
             self.r, self.z = plasma_boundary_pataki(self.n,0.32,1.7,0.33)
+        elif self.shape == 'pataki_nstx':
+            self.r, self.z = plasma_boundary_pataki(self.n,0.78,2.0,0.35)
+        elif self.shape == 'xpoint_iter':
+            self.r, self.z = plasma_boundary_xpoint_iter(self.n)
 
 
         # timing end ---------------------------------------------------------------------------------------------------
@@ -1950,13 +2117,22 @@ class PlasmaShape():
                                        # average between the maximum and minimum edge length along the boundary
 
         # compute the triangulation using triangle
-        boundary_vertices = {'vertices':numpy.stack((self.r[0:-1],self.z[0:-1]),axis=1)} # Start by generating the vertices
+        vertices = numpy.stack((self.r[0:-1],self.z[0:-1]),axis=1)                       # Start by generating the vertices
                                                                                          # at the boundary of the plasma
                                                                                          # in the format used by triangle.
                                                                                          # The last vertex is not used
                                                                                          # in order not to have repeated
                                                                                          # vertices.
-        triangle_mesh = triangle.triangulate(boundary_vertices,'q30a%f' % (tri_area)) # Triangulate with quality parameters:
+
+        segment_markers = numpy.ones([self.r.size-1,1],dtype=numpy.int32) # there is only one segment marker, this value is arbitrary, so we choose 1
+
+        vertex_markers = 2*numpy.ones([self.r.size-1,1],dtype=numpy.int32) # there is only one vertex marker, this value is arbitrary, so we choose 1
+
+        segments = numpy.stack((numpy.arange(0,self.r.size-1,dtype=numpy.int32),numpy.arange(1,self.r.size,dtype=numpy.int32)),axis=1)
+        segments[-1,-1] = 0
+
+        boundary_definition = {'segment_markers':segment_markers,'segments':segments,'vertex_markers':vertex_markers,'vertices':vertices}
+        triangle_mesh = triangle.triangulate(boundary_definition,'pq30a%.20f' %(tri_area)) # Triangulate with quality parameters:
                                                                                       # q30, meaning that the minimum angle
                                                                                       # of a triangle of the mesh is 30,
                                                                                       # and a%f %(tri_area), meaning that
@@ -2098,6 +2274,95 @@ def plasma_boundary_pataki(n,epsilon,kappa,delta):
 
     r = 1.0 + epsilon*numpy.cos(xi + alpha*numpy.sin(xi))
     z = epsilon*kappa*numpy.sin(xi)
+
+    return r, z
+
+
+def plasma_boundary_xpoint_iter(n):
+    r"""
+    Function that returns a set of n points that defines the boundary of
+    the x-point plasma shape test case [palha2015].
+
+    Usage
+    -----
+    .. code-block :: python
+
+        plasma_boundary_xpoint(n)
+
+
+    Parameters
+    ----------
+    n : int
+        The number of points to generate on the boundary.
+
+    Returns
+    -------
+    r : numpy.array(float64), [1,n]
+        The r coordinates of the points in the boundary of the plasma.
+
+    z : numpy.array(float64), [1,n]
+        The z coordinates of the points in the boundary of the plasma.
+
+
+    REFERENCES
+    ----------
+    .. [palha2015] A. Palha, B. Koren, and F. Felici, “A mimetic spectral element solver for the Grad-Shafranov
+                   equation on curved meshes,” http://arxiv.org/abs/1512.05989,
+                   submitted to Journal of Computational Physics, 2015.
+
+
+    :First Added:   2016-01-06
+    :Last Modified: 2016-01-06
+    :Copyright:     Copyright (C) 2016 apalha
+    :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+    Reviews:
+    1. First implementation. (apalha, 2016-01-06)
+    """
+
+    # The boundary of the x point plasma is made up of fours segments. For this reason we divide the number of points
+    # by 4 and round the value. To still have n points along the boundary, the missing points are added to the last segment.
+    n_per_segment = int(n/4) # recall that this will floor the result and return an int
+    n_last_segment = n - 3*n_per_segment # the last segment has more points to compensate the rounding
+
+    # allocate memory space for the point's coordinates
+    r = numpy.zeros(n)
+    z = numpy.zeros(n)
+
+    # segment 1
+    s = numpy.linspace(0.0,1.0,n_per_segment+1)
+    cx = numpy.fliplr(numpy.array([[0.88, 0.5521148541571086, -0.20640336053451946, 2.4834931938984552, -5.03596728562579, 2.825936559606835, 0.32138363979983614, -0.5005576013019241]]))[0]
+    cy = numpy.fliplr(numpy.array([[-0.6, 0.5999999999999996, 0.0, 0.0, 0.0, 0.0, 0.0]]))[0]
+
+    r[0:n_per_segment] = numpy.polyval(cx,s[0:-1]) # s[0:-1] because boundary points should not be repeated
+    z[0:n_per_segment] = numpy.polyval(cy,s[0:-1])
+
+    # segment 2
+    s = numpy.linspace(0.0,1.0,n_per_segment+1)
+    cx = numpy.fliplr(numpy.array([[1.3200000000000014, 0., -0.42243831504242935, 1.2501879617549474, -5.368764301947667, 11.182100647055545, -11.580478496134559, 4.499392504314161]]))[0]
+    cy = numpy.fliplr(numpy.array([[0., 0.8891881373291781, -4.194429431647997, 22.70616098798567, -59.94304165245803, 82.42892663380348, -56.412807237548165, 15.069366375444783]]))[0]
+
+    r[n_per_segment:(2*n_per_segment)] = numpy.polyval(cx,s[0:-1]) # s[0:-1] because boundary points should not be repeated
+    z[n_per_segment:(2*n_per_segment)] = numpy.polyval(cy,s[0:-1])
+
+    # segment 3
+    s = numpy.linspace(1.0,0.0,n_per_segment+1) # this has to be flipped because the natural order of the points is the other way
+    cx = numpy.fliplr(numpy.array([[0.6799999999999871, 0., 0.16248409671487218, -1.14462836550234, 5.240947487862182, -11.313789484633782, 11.659292015452298,-4.404305749893218]]))[0]
+    cy = numpy.fliplr(numpy.array([[0.0, 0.8891881373291746, -4.194429431648004, 22.706160987985644, -59.943041652457914, 82.42892663380331, -56.412807237548044, 15.06936637544475]]))[0]
+
+    r[(2*n_per_segment):(3*n_per_segment)] = numpy.polyval(cx,s[0:-1]) # s[0:-1] because boundary points should not be repeated
+    z[(2*n_per_segment):(3*n_per_segment)] = numpy.polyval(cy,s[0:-1])
+
+    # segment 4
+    s = numpy.linspace(1.0,0.0,n_last_segment) # this has to be flipped because the natural order of the points is the other way
+    cx = numpy.fliplr(numpy.array([[0.88, -0.36475148713106564, 0.15669462964640002, -0.9082699105455433, 2.8740467630422044, -3.379335261756935, 1.7746456511237334, -0.35303038437880685]]))[0]
+    cy = numpy.fliplr(numpy.array([[-0.6, 0.5999999999999993, 0., 0., 0., 0., 0.]]))[0]
+
+    r[(3*n_per_segment):n] = numpy.polyval(cx,s)
+    z[(3*n_per_segment):n] = numpy.polyval(cy,s)
 
     return r, z
 

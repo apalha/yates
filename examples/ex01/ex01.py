@@ -1,21 +1,28 @@
 # -*- coding: utf-8 -*-
-""" ex01.py :: Test of the linear solver for the Grad-Shafranov equation.
+""" ex01.py :: Test of Grad-Shafranov analytical solutions available in yates.
 
 Description
 -----------
-This script tests the implementation of the GS module for solving the 
-Grad-Shafranov equation. This test solves a linear Grad-Shafranov equation. 
-For this reason a Soloviev solution is used, see [1]_ and [2]_. 
-The boundary conditions used are Dirichlet boundary conditions since the
-analytical solution for the Grad-Shafranov equation is known.
+This script tests the implementation of the available analytical solutions for the
+Grad-Shafranov equations. One type of solutions is computed: (i) linear (Soloviev).
+Below you find the list of solutions tested:
+
+Linear (Soloviev)
+    1. ITER- and NSTX-like solutions as presented in [pataki2013]_ .
+    2. X-point ITER-like solution as presented in [cerfon2010]_ .
+    
 
 References
 ----------
-.. [1] Imazawa, R., Kawano, Y., Itami, K., Kusama, Y., Linearly-independent method for a safety factor profile,
-       Nuclear Fusion, 2014.
-
-   [2] Shi, B., General Equilibrium property of spherical torus configurations with large triangularity,
-       Plasma Physics and Controlled Fusion, 2004.
+.. [pataki2013] Pataki, A., Cerfon, A. J., Freidberg, J. P., Greengard, L., and O’Neil, M. (2013).
+                "A fast, high-order solver for the Grad-Shafranov equation",
+                Journal of Computational Physics, 243, 28–45. http://doi.org/10.1016/j.jcp.2013.02.045
+.. [cerfon2010] Cerfon, A. J., & Freidberg, J. P. (2010).
+                "'One size fits al' analytic solutions to the Grad-Shafranov equation",
+                Physics of Plasmas, 17(3), 032502. http://doi.org/10.1063/1.3328818
+.. [palhaGS2016] Palha, A., Koren, B. , and Felici, F., 
+                 "A mimetic spectral element solver for the Grad–Shafranov equation",
+                 Journal of Computational Physics, vol. 316, pp. 63–93, Jul. 2016.
 
 :First added:  2016-04-19
 :Last updated: 2016-04-19
@@ -31,139 +38,99 @@ Reviews
 """
 
 import yates
-import dolfin
 import numpy
-import time
 import pylab
-import dolfinmplot
-
-# Set yates parameters --------------------------------------------------------
-
-yates.gs.output_parameters['runtime_info'] = True # yates computes time spent in each function
-
-# Define yates solver parameters. 
-solver_parameters = yates.gs.DEFAULT_SOLVER_PARAMETERS # Start by using the default parameters.
-solver_parameters['nonlinear_solver'] = 'Picard'    # Select the type of nonlinear solver options:
-                                                    # Picard|Newton
-# -----------------------------------------------------------------------------
 
 
 # Input parameters ------------------------------------------------------------
 
-# Define the current density. YATES requires that J is a function of (r,z,psi)
-# therefore the three inputs need to be present in the definition of the function,
-# nevertheless, the function itself does not need to depend on all variables. In
-# this case, since it is a linear case, J only depends on (r,z).
-def J(r,z,psi):
-    return r
-# -----------------------------------------------------------------------------
-
-# Non-eigenvalue solution -----------------------------------------------------
-
-
-
-# Initialize the solver -------------------------------------------------------
-
-# define the mesh
-plasma_shape = yates.gs.PlasmaShape('xpoint_iter',n=128) # Use a predefined plasma shape. Available shapes:
-                                                      # xpoint_iter|pataki_nstx|pataki_iter_0|pataki_iter_1|pataki_iter_2|pataki_iter_3
-                                                      # 128 gives 2049 elements
-mesh = plasma_shape.mesh
-
-
-# define the Grad-Shafranov solver
-# here we consider a fixed boundary therefore the inner_objects are set to None
-# since there is only the plasma in the computational domain, outer_objects is
-# also set to None because the boundary of the plasma is also fixed and the
-# value of psi at the boundary is set to 0, the solver_parameters have been defined
-# before and it will essentially be Picard iterations for the nonlinearity (in
-# this case it is linear, therefore Picard and Newton will result in the same
-# solution)
-plasma = yates.gs.GS_Solver(mesh, inner_objects=None, outer_objects=None, solver_parameters=solver_parameters)
+# set the analytical solution to plot
+solType = 'soloviev_xpoint_nstx' # availabe options:
+                          # 'soloviev_iter'|'soloviev_nstx'
+                          # 'soloviev_xpoint_iter'|'soloviev_xpoint_nstx'
+nPlotPoints = numpy.array([100,100]) # the number of points to use to plot the
+                                     # solution
 # -----------------------------------------------------------------------------
 
 
-  
-psi_old = yates.DolfinFunction(plasma.psi)
+# Internal parameters ---------------------------------------------------------
 
+# specify plot domain and contour values, etc., for different solutions
 
-for k in range(10):
-    print '\nIteration k= %d' % k
-    start_time = time.time()
-    plasma.solve_step(J)#,bc_function=psi_python)
-    print time.time() - start_time
-    start_time = time.time()
-    error = dolfin.norm(psi_old.vector()-plasma.psi.vector(),'linf')
-    psi_old.update(plasma.psi)
-    print time.time() - start_time
-    print error
+if solType == 'soloviev_iter':
+    # r and z bounds, used to plot the solution
+    rBounds = numpy.array([0.6,1.4])
+    zBounds = numpy.array([-0.6,0.6])
+    # the bounds of the contours used to plot the solution
+    cBounds = numpy.array([-0.04,0.0])
+    # compute the contour values
+    cValues = numpy.linspace(cBounds[0],cBounds[1],11)
+
+elif solType == 'soloviev_nstx':
+    # r and z bounds, used to plot the solution
+    rBounds = numpy.array([0.,2.0])
+    zBounds = numpy.array([-1.8,1.8])
+    # the bounds of the contours used to plot the solution
+    cBounds = numpy.array([-0.25,0.0])
+    # compute the contour values
+    cValues = numpy.linspace(cBounds[0],cBounds[1],11)
     
+elif solType == 'soloviev_xpoint_iter':
+    # r and z bounds, used to plot the solution
+    rBounds = numpy.array([0.6,1.4])
+    zBounds = numpy.array([-0.7,0.7])
+    # the bounds of the contours used to plot the solution
+    cBounds = numpy.array([-0.035,0.0])
+    # compute the contour values
+    cValues = numpy.linspace(cBounds[0],cBounds[1],11)
+    
+elif solType == 'soloviev_xpoint_nstx':
+    # r and z bounds, used to plot the solution
+    rBounds = numpy.array([0.1,2.0])
+    zBounds = numpy.array([-1.8,1.8])
+    # the bounds of the contours used to plot the solution
+    cBounds = numpy.array([-0.25,0.0])
+    # compute the contour values
+    cValues = numpy.linspace(cBounds[0],cBounds[1],11)
 
-myplot = dolfinmplot.plot(plasma.psi)
-pylab.colorbar(myplot)
-#pylab.clim(0.0,1.0)
-dolfinmplot.contour(plasma.psi,levels=numpy.linspace(0,1,11))
-#dolfinmplot.plot(plasma.mesh) 
-
-## Eigenvalue solution ---------------------------------------------------------
-#def J(r,z,psi):
-#    C1 = -1.0
-#    C2 = 2.0
-#    return ((C1/r) + C2*r)*psi
-#    
-# 
-#psi_old = yates.DolfinFunction(plasma.psi)
-#psi_dif = yates.DolfinFunction(plasma.psi)
-#
-#sigma = 1.0
-#
-#for k in range(10):
-#    print '\nIteration k= %d' % k
-#    start_time = time.time()
-#    plasma.solve_step(J,sigma=sigma)#,bc_function=psi_python)
-#    print '   Solving time    : ' + str(time.time() - start_time)
-#    if k > 0:
-#        psi_max = numpy.abs(plasma.psi_vector.array()).max()
-#        plasma.psi_vector[:] = plasma.psi_vector[:] / psi_max
-#        sigma = sigma/psi_max
-#        print '   Psi max         : ' + str(psi_max)
-#        
-#    start_time = time.time()
-#    error = dolfin.norm(psi_old.vector()-plasma.psi.vector(),'linf')
-#    
-#    psi_dif.update(psi_old - plasma.psi)
-#    
-#    psi_old.update(plasma.psi)
-#    
-#    print '   Updating time   : ' + str(time.time() - start_time)
-#    print '   Iteraton error  : ' + str(error)
-#
-#
-#myplot = dolfinmplot.plot(plasma.psi)
-#pylab.colorbar(myplot)
-##pylab.clim(0.0,1.0)
-#dolfinmplot.contour(plasma.psi,levels=numpy.linspace(0,1,11))
-##dolfinmplot.plot(plasma.mesh) 
+else:
+    raise ValueError(str(solType) + ' is invalid. solType must be: \
+                                      soloviev_iter|soloviev_nstx|soloviev_xpoint_iter')
+# -----------------------------------------------------------------------------
 
 
-r = numpy.linspace(0.6,1.6,200)
-z = numpy.linspace(-0.7,0.7,200)
+# Compute the analytical solution ---------------------------------------------
 
-r = numpy.linspace(0.,2.0,200)
-z = numpy.linspace(-1.6,1.6,200)
+if solType == 'soloviev_iter':
+    analytical_solution = yates.gs.SolovievSolution('pataki_iter')
 
-rGrid,zGrid = numpy.meshgrid(r,z)
+elif solType == 'soloviev_nstx':
+    analytical_solution = yates.gs.SolovievSolution('pataki_nstx')
+    
+elif solType == 'soloviev_xpoint_iter':
+    analytical_solution = yates.gs.SolovievSolution('cerfon_x_iter')
+    
+elif solType == 'soloviev_xpoint_nstx':
+    analytical_solution = yates.gs.SolovievSolution('cerfon_x_nstx')
+# -----------------------------------------------------------------------------
+    
+    
+# Plot the solution -----------------------------------------------------------
 
-epsilon = 0.32
-kappa = 1.7
-delta = 0.33
+# generate the grid where to plot
+r,z = numpy.meshgrid(numpy.linspace(rBounds[0],rBounds[1],nPlotPoints[0]),
+                             numpy.linspace(zBounds[0],zBounds[1],nPlotPoints[1]))
+                             
+# evaluate the solution at the points
+psi = analytical_solution(r,z)
 
-epsilon = 0.78
-kappa = 2.0
-delta = 0.35
+# plot the contour plot of the solution
+pylab.contour(r,z,psi,cValues)
 
-psiGrid = yates.psi_soloviev_pataki(rGrid,zGrid,epsilon,kappa,delta)
+pylab.colorbar()
 
-pylab.pcolormesh(rGrid,zGrid,psiGrid,shading='gouraud')
-pylab.clim(-0.04,0.0)
-pylab.clim(-0.25,0.0)
+pylab.gca().set_aspect('equal', adjustable='box')
+pylab.xlim(rBounds)
+pylab.ylim(zBounds)
+pylab.show()
+# -----------------------------------------------------------------------------    

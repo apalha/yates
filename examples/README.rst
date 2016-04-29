@@ -9,13 +9,13 @@ Description
 This folder contains all the examples that show the functionalities of YATES.
 
 ex01
-	Fixed boundary MHD equilibrium with Picard iterations (fixed point).
+	Analytical Soloviev solutions.
 
 ex02
-	Fixed boundary MHD equilibrium with Newton iterations.
+	Computation of available plasma boundaries and associated meshes.
 
 ex03
-	Fixed boundary MHD equilibrium comparison betwen Newton and Picard iterations.
+	Fixed boundary Soloviev MHD equilibrium solution (Picard iterations).
 
 |
 |

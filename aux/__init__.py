@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """ __init__ file for aux module
 
-Description
+Descriptione
 -----------
 Simply the __init__ file for aux module containing auxiliary functions.
 
@@ -23,8 +23,9 @@ Reviews
 """
 
 # import optimized functions
-from .function import DolfinFunction, PythonFunction1D, PythonFunction2D
-
+from .function import DolfinFunction, PythonFunction1D, PythonFunction2D,\
+                      mesh2triang, mplot_cellfunction, mplot_function, plot,\
+                      contour, mcontour_function
 
 # import system related functions
 from .system import currentFuncName

@@ -32,7 +32,7 @@ Reviews
 """
 
 __all__ = [
-           'pataki_iter','pataki_nstx', 'cerfon_x_iter'
+           'pataki_iter','pataki_nstx', 'cerfon_x_iter', 'cerfon_x_nstx'
           ]
 
 
@@ -432,7 +432,7 @@ def pataki_nstx(n):
 def cerfon_x_iter(n):
     r"""
     Function that returns a set of n points that defines the boundary of
-    the x-point plasma shape test case in [cerfon].
+    the x-point ITER plasma shape test case in [cerfon].
 
     Usage
     -----
@@ -462,8 +462,8 @@ def cerfon_x_iter(n):
                 Physics of Plasmas, vol. 17, no. 3, p. 032502, Mar. 2010.
 
 
-    :First Added:   2016-01-06
-    :Last Modified: 2016-01-06
+    :First Added:   2016-04-26
+    :Last Modified: 2016-04-26
     :Copyright:     Copyright (C) 2016 apalha
     :License:       GNU GPL version 3 or any later version
 
@@ -620,3 +620,192 @@ def cerfon_x_iter(n):
     return r, z
 
 
+def cerfon_x_nstx(n):
+    r"""
+    Function that returns a set of n points that defines the boundary of
+    the x-point NSTX plasma shape test case in [cerfon].
+
+    Usage
+    -----
+    .. code-block :: python
+
+        cerfon_x_nstx(n)
+
+
+    Parameters
+    ----------
+    n : int
+        The number of points to generate on the boundary.
+
+    Returns
+    -------
+    r : numpy.array(float64), [1,n]
+        The r coordinates of the points in the boundary of the plasma.
+
+    z : numpy.array(float64), [1,n]
+        The z coordinates of the points in the boundary of the plasma.
+
+
+    REFERENCES
+    ----------
+    .. [cerfon] A. J. Cerfon and J. P. Freidberg,
+                "One size fits al" analytic solutions to the Grad-Shafranov equation",
+                Physics of Plasmas, vol. 17, no. 3, p. 032502, Mar. 2010.
+
+
+    :First Added:   2016-04-28
+    :Last Modified: 2016-04-28
+    :Copyright:     Copyright (C) 2016 apalha
+    :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+    Reviews:
+    1. First implementation. (apalha, 2016-04-28)
+    """
+
+    # The boundary is made up of fours segments parametrized from [-1,1]. For this reason
+    # we take the interval [0,4] and distribute the n points inside this interval. The points in [0,1] are generated
+    # using the first segment (after remapping [0,1]-->[-1,1]), the ones from ]1,2] are generated using the second line
+    # segment (after remapping [1,2]-->[-1,1]), the ones from ]2,3]  are generated using the third line segment
+    # (after remapping [2,3]-->[-1,1]) and the points from ]3,4] are generated using the fourth line segment
+    # (after remapping [3,4]-->[-1,1])
+
+    # generate the points from [0,4]
+    s = numpy.linspace(0,4,n)
+
+    # allocate memory space for the point's coordinates
+    r = numpy.zeros(n)
+    z = numpy.zeros(n)
+
+    # segment 1 --------------------------------------------------------------------------------------------------------
+    s_segment_1 = s[s <= 1] # select the points for the first segment
+    n_segment_1 = s_segment_1.size
+
+    # the interpolation data at Lobatto points along the boundary
+    # used to construct the polynomial that represents the boundary segment
+    rInterp = numpy.array([0.7, 0.7234633706005325, 0.776699203615713, 0.8555753258264527,\
+                           0.9551133889977392, 1.070028160843518, 1.1947543715601117,\
+                           1.3229086061887905, 1.4466585346506253, 1.5569824375996102,\
+                           1.6457888087669386, 1.709079106191855, 1.748332551802545,\
+                           1.7689225365681753, 1.7774458285788837, 1.7797699837362337,\
+                           1.7800000000000005])
+
+    zInterp = numpy.array([-1.71, -1.686944338132322, -1.635348306549131, -1.560325603605155,\
+                           -1.4669594429575197, -1.3588112588111587, -1.2374422664977696,\
+                           -1.1029455071327114, -0.9552581408056923, -0.796083061911744,\
+                           -0.630666542007622, -0.4678848465984374, -0.3181076886214276,\
+                           -0.1906146014157926, -0.09233601015685, -0.027850425360290414, 0.])
+
+    # compute the degree of the polynomial interpolation
+    p = rInterp.size - 1
+
+    # evaluate the interpolating polynomials at the boundary points
+    s_segment_1 = s_segment_1*2.0 -1.0 # rescale [0,1] --> [-1,1] because the the segments are parametrized as [-1,1] --> (r,z)
+    evaluatedPoly = aux.lobattoPoly(s_segment_1,p)
+
+
+    r[0:n_segment_1] = numpy.dot(evaluatedPoly,rInterp)
+    z[0:n_segment_1] = numpy.dot(evaluatedPoly,zInterp)
+
+
+    # segment 2 --------------------------------------------------------------------------------------------------------
+    s_segment_2 = s[numpy.logical_and((s > 1), (s <= 2))] - 1.0 # -1.0 so that s_segment_2 lies in [0,1]
+    n_segment_2 = s_segment_2.size
+
+    # the interpolation data at Lobatto points along the boundary
+    # used to construct the polynomial that represents the boundary segment
+    rInterp = numpy.array([1.7800000000000005, 1.779751424071047, 1.777290213144307,\
+                           1.7685635630356966, 1.7483487397155513, 1.7113005913762516,\
+                           1.6528598266265673, 1.5701407920005492, 1.462985271595146,\
+                           1.3347567473884572, 1.192003801093924, 1.0430083307177616,\
+                           0.8964705027179901, 0.7614900394954633, 0.6486827808673042,\
+                           0.5698610408150089, 0.5346528039080656])
+
+    zInterp = numpy.array([0., 0.02906863133218886, 0.09637500293235754, 0.19898803387768582,\
+                           0.332396262441717, 0.49025343559685036, 0.6644905665476979,\
+                           0.8456077464532068, 1.0233582890476691, 1.1879421086912032,\
+                           1.3310006106900836, 1.4453099956802362, 1.5234408123320697,\
+                           1.5583117495142824, 1.5504188526416782, 1.5186805636341394,\
+                           1.4960847640641393])
+
+    # compute the degree of the polynomial interpolation
+    p = rInterp.size - 1
+
+    # evaluate the interpolating polynomials at the boundary points
+    s_segment_2 = s_segment_2*2.0 -1.0 # rescale [0,1] --> [-1,1] because the the segments are parametrized as [-1,1] --> (r,z)
+    evaluatedPoly = aux.lobattoPoly(s_segment_2,p)
+
+
+    r[n_segment_1:(n_segment_2+n_segment_1)] = numpy.dot(evaluatedPoly,rInterp)
+    z[n_segment_1:(n_segment_2+n_segment_1)] = numpy.dot(evaluatedPoly,zInterp)
+
+
+    # segment 3 --------------------------------------------------------------------------------------------------------
+    s_segment_3 = s[numpy.logical_and((s > 2), (s <= 3))] - 2.0 # -2.0 so that s_segment_3 lies in [0,1]
+    s_segment_3 = 1.0 - s_segment_3 # flip the order of the points because the definition of this line segment goes the opposite way
+    n_segment_3 = s_segment_3.size
+
+    # the interpolation data at Lobatto points along the boundary
+    # used to construct the polynomial that represents the boundary segment
+    rInterp = numpy.array([0.21999999999999942, 0.22001508051977828, 0.22015869614198244,\
+                           0.2206366879545397, 0.2216600262835425, 0.22339562814832764,\
+                           0.22601099649075945, 0.2298537390975662, 0.23585103995752124,\
+                           0.2462781380254665, 0.2656832991357172, 0.2999177463203487,\
+                           0.35071560085304965, 0.41138506404658653, 0.4699097072086467,\
+                           0.5140508610331874, 0.5346528039080656])
+
+    zInterp = numpy.array([0.0, 0.015251345481609047, 0.0506211136887252,\
+                           0.1049357248242771, 0.17693478057590664, 0.2655688789740946,\
+                           0.3703289996824086, 0.4913456910377319, 0.6290000159765382,\
+                           0.7825106083492844, 0.9468228991364073, 1.1093138621420369,\
+                           1.2526210597830798, 1.3636928758053237, 1.4383557572398136,\
+                           1.4801332492018406, 1.4960847640641393])
+
+    # compute the degree of the polynomial interpolation
+    p = rInterp.size - 1
+
+    # evaluate the interpolating polynomials at the boundary points
+    s_segment_3 = s_segment_3*2.0 - 1.0 # rescale [0,1] --> [-1,1] because the the segments are parametrized as [-1,1] --> (r,z)
+    evaluatedPoly = aux.lobattoPoly(s_segment_3,p)
+
+
+    r[(n_segment_2+n_segment_1):(n_segment_3+n_segment_2+n_segment_1)] = numpy.dot(evaluatedPoly,rInterp)
+    z[(n_segment_2+n_segment_1):(n_segment_3+n_segment_2+n_segment_1)] = numpy.dot(evaluatedPoly,zInterp)
+
+
+    # segment 4 --------------------------------------------------------------------------------------------------------
+    s_segment_4 = s[s > 3] - 3.0 # -3.0 so that s_segment_4 lies in [0,1]
+    s_segment_4 = 1.0 - s_segment_4 # flip the order of the points because the definition of this line segment goes the opposite way
+    n_segment_4 = s_segment_4.size
+
+    # the interpolation data at Lobatto points along the boundary
+    # used to construct the polynomial that represents the boundary segment
+    rInterp = numpy.array([0.7, 0.6841423621684852, 0.6510795182456547, 0.6034913974092164,\
+                           0.5460241320463914, 0.4835570928463047, 0.42081829994129094,\
+                           0.3623147505328137, 0.3122199458874615, 0.27371339701762787,\
+                           0.2477646557604886, 0.23260081116796077, 0.22490108326424135,\
+                           0.2215298892288634, 0.22032412432787368, 0.2200276623355889,\
+                           0.21999999999999942])
+
+    zInterp = numpy.array([-1.71, -1.676370201838863, -1.6061075211607174, -1.5042971026895338,\
+                           -1.3793214513463101, -1.238869147498682, -1.0890170382588285,\
+                           -0.9343150292400962, -0.7785523180725756, -0.6257550481412574,\
+                           -0.4807206249055658, -0.34850252945637933, -0.23342018786382,\
+                           -0.13873567011814072, -0.06697349019859555, -0.020181222748749728,\
+                           0.0])
+
+    # compute the degree of the polynomial interpolation
+    p = rInterp.size - 1
+
+    # evaluate the interpolating polynomials at the boundary points
+    s_segment_4 = s_segment_4*2.0 - 1.0 # rescale [0,1] --> [-1,1] because the the segments are parametrized as [-1,1] --> (r,z)
+    evaluatedPoly = aux.lobattoPoly(s_segment_4,p)
+
+
+    r[(n_segment_3+n_segment_2+n_segment_1):] = numpy.dot(evaluatedPoly,rInterp)
+    z[(n_segment_3+n_segment_2+n_segment_1):] = numpy.dot(evaluatedPoly,zInterp)
+
+
+    return r, z

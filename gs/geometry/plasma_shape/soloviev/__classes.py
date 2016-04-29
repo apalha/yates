@@ -71,6 +71,7 @@ class SolovievShape():
             "pataki_iter" : ITER like smooth plasma shape as presented in [pataki2013]_ (full elongation).
             "pataki_nstx" : NSTX like smooth plasma shape as presented in [pataki2013]_.
             "cerfon_x_iter" : ITER like x-point plasma shape as presented in [cerfon2010]_.
+            "cerfon_x_nstx" : NSTX like x-point plasma shape as presented in [cerfon2010]_.
 
     n : int
         The number of points on the boundary to generate.
@@ -204,6 +205,8 @@ class SolovievShape():
             self.r, self.z = pataki_nstx(self.n)
         elif self.shape == 'cerfon_x_iter':
             self.r, self.z = cerfon_x_iter(self.n)
+        elif self.shape == 'cerfon_x_nstx':
+            self.r, self.z = cerfon_x_nstx(self.n)
 
 
         # timing end ---------------------------------------------------------------------------------------------------

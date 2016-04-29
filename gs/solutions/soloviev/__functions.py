@@ -497,7 +497,7 @@ def cerfon_psi_p_ddr(r,z,A):
     1. First implementation. (apalha, 2016-04-22)
     """
 
-    return 0.5*(r**3) - 0.155*(0.5*r - 0.5*(r**3) + r*numpy.log(r))
+    return 0.5*(r**3) + A*(0.5*r - 0.5*(r**3) + r*numpy.log(r))
 
 
 def cerfon_psi_p_ddr2(r,z,A):
@@ -547,7 +547,7 @@ def cerfon_psi_p_ddr2(r,z,A):
     1. First implementation. (apalha, 2016-04-22)
     """
 
-    return 1.5*(r**2) - 0.155*(1.5 - 1.5*(r**2) + numpy.log(r))
+    return 1.5*(r**2) + A*(1.5 - 1.5*(r**2) + numpy.log(r))
 
 
 def cerfon_psi_p_ddz(r,z,A):

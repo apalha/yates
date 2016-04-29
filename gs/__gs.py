@@ -242,17 +242,16 @@ class GS_Solver():
         self._vertices_y = self._vertices[:,1].copy()
 
         # define the solution function and its associated vector
-        #self.psi = dolfin.Function(self._V)
-        self.psi = DolfinFunction(self._V)
+        self.psi = aux.DolfinFunction(self._V)
         if self.solver_parameters['linear_algebra_backend'] == 'scipy':
-            self.psi_vector = numpy.zeros(self.psi.vector().array().shape)
+            self.psi_vector = numpy.ones(self.psi.vector().array().shape)
         else:
             self.psi_vector = self.psi.vector()
 
         # if a newton solver is used to solve for the nonlinearity then we
         # need to solve for the variation between two iterations, delta_psi
         if self.solver_parameters['nonlinear_solver'] == 'Newton':
-            self.delta_psi = DolfinFunction(self._V)
+            self.delta_psi = aux.DolfinFunction(self._V)
             if self.solver_parameters['linear_algebra_backend'] == 'scipy':
                 self.delta_psi_vector = numpy.zeros(self.delta_psi.vector().array().shape)
             else:
@@ -265,13 +264,14 @@ class GS_Solver():
                                                # the nonlinearity then the derivative of
                                                # the current density with respect to psi
                                                # must be defined
-
         self._b = dolfin.Function(self._V)
+
+
         if self.solver_parameters['linear_algebra_backend'] == 'scipy':
             self.j_vector = numpy.zeros(self.j.vector().array().shape)
             if self.solver_parameters['nonlinear_solver'] == 'Newton':
                 self.dj_vector = numpy.zeros(self.dj.vector().array().shape)
-            self.b_vector = numpy.zeros(self.b.vector().array().shape)
+            self._b_vector = numpy.zeros(self.b.vector().array().shape)
 
         else:
             self.j_vector = self.j.vector()
@@ -338,13 +338,15 @@ class GS_Solver():
         elif self.solver_parameters['nonlinear_solver'] == 'Newton':
             print 'Optimization for Newton solver needed!'
 
+        # force the initialization of self.psi_vector to be 1
+        self.psi_vector[:] = 1.0
+
         # timing end ---------------------------------------------------------------------------------------------------
         if config.output['timing']:
             self.timing[aux.currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
-
-    def solve_step(self, j, dj=None, sigma=1.0, bc_function=None):
+    def solve_step(self, j, dj=None, sigma=1.0, bc_values=0.0):
         r"""
         Solve the Grad-Shafranov equation given the right hand side j (current sources). This function assumes j to
         not depend on \psi. This function therefore can be used to solve one step of a nonlinear
@@ -354,7 +356,7 @@ class GS_Solver():
         -----
         .. code-block :: python
 
-            self.solve_step(j,dj=None,sigma=1.0,bc_function=None)
+            self.solve_step(j,dj=None,sigma=1.0,bc_values=None)
 
 
         Parameters
@@ -363,6 +365,11 @@ class GS_Solver():
              Represents the toroidal current density
         dj : python function evaluatable at \psi and (r,z), dj(r,z,psi)
              Represents the derivative of j with respect to psi
+        sigma : float64, single value
+                The eigenvalue to use when solve an Grad-Shafranov eigenvalue problem.
+        bc_values : numpy.array, self.bc_dof.shape
+                    Contains the values of the solution at the boundary. These values must correspond to
+                    the points in self.bc_coordinates
 
         Returns
         -------
@@ -402,10 +409,10 @@ class GS_Solver():
         #---------------------------------------------------------------------------------------------------------------
 
         if self.solver_parameters['nonlinear_solver'] == 'Picard':
-            self.__solve_step_picard(j,sigma=sigma, bc_function=bc_function)
+            self.__solve_step_picard(j,sigma=sigma, bc_values=bc_values)
 
         elif self.solver_parameters['nonlinear_solver'] == 'Newton':
-            self.__solve_step_newton(j,dj,sigma=sigma, bc_function=bc_function)
+            self.__solve_step_newton(j,dj,sigma=sigma, bc_values=bc_values)
 
 
         # timing end ---------------------------------------------------------------------------------------------------
@@ -414,7 +421,7 @@ class GS_Solver():
         #---------------------------------------------------------------------------------------------------------------
 
 
-    def __solve_step_picard(self, j, sigma, bc_function):
+    def __solve_step_picard(self, j, sigma, bc_values):
         r"""
         Solve one step of the Picard iteration of the nonlinear Grad-Shafranov equation
         given the right hand side j (current sources).
@@ -423,7 +430,7 @@ class GS_Solver():
         -----
         .. code-block :: python
 
-            self.solve_step(j,sigma=1.0,bc_function=None)
+            self.solve_step(j,sigma=1.0,bc_values=None)
 
 
         Parameters
@@ -458,20 +465,19 @@ class GS_Solver():
         # use psi(r,z) and j(r,z,psi) to compute j(r,z)
         self.j_vector[:] = sigma*j(self._vertices_x,self._vertices_y,self.psi_vector.array())
 
-
         # setup the right hand side
         self._b_vector = self._M*self.j_vector
-        if bc_function == None:
+        if bc_values == None:
             self._b_vector[self.bc_dof] = 0.0
         else:
-            self._b_vector[self.bc_dof] = bc_function(self.bc_coordinates[:,0],self.bc_coordinates[:,1])
+            self._b_vector[self.bc_dof] = bc_values
 
 
         # solve one step
         self._solver.solve(self.psi_vector, self._b_vector)
 
 
-    def __solve_step_newton(self, j, dj, sigma, bc_function):
+    def __solve_step_newton(self, j, dj, sigma, bc_values):
         r"""
         Solve one step of the Newton iteration of the nonlinear Grad-Shafranov equation
         given the right hand side j (current sources).
@@ -480,7 +486,7 @@ class GS_Solver():
         -----
         .. code-block :: python
 
-            self.solve_step(j,dj,sigma=1.0)
+            self.solve_step(j,dj,sigma=1.0,bc_values=0.0)
 
 
         Parameters
@@ -515,6 +521,9 @@ class GS_Solver():
         1. First implementation. (apalha, 2016-04-18)
         """
 
+        # force the boundary values of the solution to be the boundary condition
+        self.psi_vector[self.bc_dof] = bc_values
+
         # use psi(r,z) and j(r,z,psi) to compute j(r,z)
         self.j_vector[:] = sigma*j(self._vertices_x,self._vertices_y,self.psi_vector.array())
         # use psi(r,z) and dj(r,z,psi) to compute dj(r,z)
@@ -522,7 +531,7 @@ class GS_Solver():
 
 
         # setup the right hand side
-        self._b_vector =  dolfin.assemble(self.B_form) - (self.A*self.psi_vector)
+        self._b_vector = dolfin.assemble(self.B_form) - (self.A*self.psi_vector)
         self._b_vector[self.bc_dof] = 0.0
 
 

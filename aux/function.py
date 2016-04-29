@@ -18,15 +18,19 @@ References
 """
 
 __all__ = [
-           'DolfinFunction', 'PythonFunction1D', 'PythonFunction2D'            # Classes
+           'DolfinFunction', 'PythonFunction1D', 'PythonFunction2D',            # Classes
+           'mesh2triang', 'mplot_cellfunction', 'mplot_function', 'plot', 'contour', 'mcontour_function' # functions
           ]
 
 import dolfin
 import numpy
 import time
+import matplotlib.pyplot as plt
+import matplotlib.tri as tri
 
 from .. import config
 from .system import *
+
 
 # Classes --------------------------------------------------------------------------------------------------------------
 #                                                                                                  <editor-fold desc="">
@@ -131,14 +135,15 @@ class DolfinFunction(dolfin.functions.function.Function):
 
         else: # geometric dimension 2
             # compute the triangulation to speed up plotting with matplotlib
-            self.triangulation = dolfinmplot.mesh2triang(self.function_space().mesh())
+            self.triangulation = mesh2triang(self.function_space().mesh())
 
         # timing end ---------------------------------------------------------------------------------------------------
         if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
 
-    def __call__(self, **kwargs):
+    def probe(self, **kwargs):
+        #__call__
         r"""
         Function that evaluates the function at a set of N points
 
@@ -731,6 +736,369 @@ class PythonFunction2D():
         if config.output['timing']:
             self.timing[currentFuncName()] = time.time() - start_time # compute the execution time of the current function
         #---------------------------------------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------------------------------- </editor-fold>
+
+
+
+
+# Functions ------------------------------------------------------------------------------------------------------------
+#                                                                                                  <editor-fold desc="">
+
+
+def mesh2triang(mesh):
+    r"""
+        Converts a dolfin mesh into a matplotlib triangulation.
+
+        Usage
+        -----
+        .. code-block :: python
+
+            mesh2triang(mesh)
+
+
+        Parameters
+        ----------
+        mesh : dolfin.Mesh
+               The dolfin mesh to convert to matplotlib triangulation.
+
+        Returns
+        -------
+        triangulation : matplotlib.tri.triangulation.Triangulation
+                        The matplotlib triangulation of the dolfin mesh.
+
+        :First Added:   Thu Mar 19 12:47:25 2015
+        :Last Modified: Thu Mar 19 12:47:25 2015
+        :Copyright:     Copyright (C) 2015 crichardson, apalha
+        :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+        Reviews:
+            1. First implementation. (crichardson)
+    """
+
+    xy = mesh.coordinates()
+    triangulation = tri.Triangulation(xy[:, 0], xy[:, 1], mesh.cells())
+    return triangulation
+
+
+def mplot_cellfunction(cellfn):
+    r"""
+        Plots a dolfin cell function in matplotlib. Triangles are colored with
+        a single color.
+
+        Usage
+        -----
+        .. code-block :: python
+
+            mplot_cellfunction(cellfn)
+
+
+        Parameters
+        ----------
+        cellfn : dolfin.CellFunction or
+                 dolfin.MeshFunction of topological dimension 2 (cells)
+                 The dolfin cell or mesh function to plot.
+
+        Returns
+        -------
+        cellfn_plot : matplotlib.collections.PolyCollection
+                      The matplotlib plot of the cell function.
+
+        :First Added:   Thu Mar 19 12:47:25 2015
+        :Last Modified: Thu Mar 19 12:47:25 2015
+        :Copyright:     Copyright (C) 2015 crichardson, apalha
+        :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+        Reviews:
+            1. First implementation. (crichardson)
+    """
+    C = cellfn.array()
+    tri = mesh2triang(cellfn.mesh())
+    cellfn_plot = plt.tripcolor(tri, facecolors=C)
+    return cellfn_plot
+
+
+def mplot_function(f):
+    r"""
+        Plots a dolfin function in matplotlib. The following types of functions
+        can be plotted:
+            DG0
+            scalar functions interpolated to vertices
+            vector functions interpolated to vertices
+
+        Usage
+        -----
+        .. code-block :: python
+
+            mplot_function(f)
+
+
+        Parameters
+        ----------
+        f : dolfin.Function
+            The dolfin function to plot. Only 2D functions (scalar or vector
+            valued) can be plotted.
+
+        Returns
+        -------
+        f_plot : matplotlib.collections.PolyCollection (for scalar valued functions)
+                 matplotlib.quiver.Quiver (for vector valued functions)
+                 The matplotlib plots of the functions.
+
+        :First Added:   Thu Mar 19 12:47:25 2015
+        :Last Modified: Thu Dec 08 12:47:25 2015
+        :Copyright:     Copyright (C) 2015 crichardson, apalha
+        :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+        Reviews:
+            1. First implementation. (crichardson)
+            2. Added the option to plot DolfinFunction. (apalha, 2015-12-08)
+    """
+
+    mesh = f.function_space().mesh()
+    if (mesh.geometry().dim() != 2):
+        raise AttributeError('Mesh must be 2D')
+
+    if isinstance(f,DolfinFunction):
+        # DG0 cellwise function
+        if f.vector().size() == mesh.num_cells():
+            C = f.vector().array()
+            return plt.tripcolor(f.triangulation, facecolors=C)
+        # Scalar function, interpolated to vertices
+        elif f.value_rank() == 0:
+            C = f.compute_vertex_values(mesh)
+            return plt.tripcolor(f.triangulation, C, shading='gouraud')
+        # Vector function, interpolated to vertices
+        elif f.value_rank() == 1:
+            w0 = f.compute_vertex_values(mesh)
+            if (len(w0) != 2*mesh.num_vertices()):
+                raise AttributeError('Vector field must be 2D')
+            X = mesh.coordinates()[:, 0]
+            Y = mesh.coordinates()[:, 1]
+            U = w0[:mesh.num_vertices()]
+            V = w0[mesh.num_vertices():]
+            return plt.quiver(X,Y,U,V)
+    else:
+        # DG0 cellwise function
+        if f.vector().size() == mesh.num_cells():
+            C = f.vector().array()
+            return plt.tripcolor(mesh2triang(mesh), facecolors=C)
+        # Scalar function, interpolated to vertices
+        elif f.value_rank() == 0:
+            C = f.compute_vertex_values(mesh)
+            return plt.tripcolor(mesh2triang(mesh), C, shading='gouraud')
+        # Vector function, interpolated to vertices
+        elif f.value_rank() == 1:
+            w0 = f.compute_vertex_values(mesh)
+            if (len(w0) != 2*mesh.num_vertices()):
+                raise AttributeError('Vector field must be 2D')
+            X = mesh.coordinates()[:, 0]
+            Y = mesh.coordinates()[:, 1]
+            U = w0[:mesh.num_vertices()]
+            V = w0[mesh.num_vertices():]
+            return plt.quiver(X,Y,U,V)
+
+
+def mcontour_function(f,levels=None,colors=None):
+    r"""
+        Plots the contour plot of a dolfin function in matplotlib. The following types of functions
+        can be plotted:
+            scalar functions interpolated to vertices
+
+        Usage
+        -----
+        .. code-block :: python
+
+            mcontour_function(f,levels=None,colors=None)
+
+
+        Parameters
+        ----------
+        f : dolfin.Function, DolfinFunction
+            The dolfin function to plot. Only 2D functions (scalar
+            valued) can be plotted.
+        levels: numpy.array, size: [1,N] or [N,1]
+                The levels of the contours to plot.
+        colors: string, size: single value
+                Color and line type specification for the contours, as defined in pylab.
+
+        Returns
+        -------
+        f_plot : matplotlib.collections.PolyCollection (for scalar valued functions)
+                 matplotlib.quiver.Quiver (for vector valued functions)
+                 The matplotlib plots of the functions.
+
+        :First Added:   Tue Dec 08 12:47:25 2015
+        :Last Modified: Tue Dec 08 12:47:25 2015
+        :Copyright:     Copyright (C) 2015 crichardson, apalha
+        :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+        Reviews:
+            1. First implementation. (apalha, 2015-12-08)
+    """
+
+    mesh = f.function_space().mesh()
+    if (mesh.geometry().dim() != 2):
+        raise AttributeError('Mesh must be 2D')
+
+    if isinstance(f,DolfinFunction):
+        # DG0 cellwise function
+        if f.vector().size() == mesh.num_cells():
+            C = f.vector().array()
+            return plt.tricontour(f.triangulation, C, levels=levels, colors=colors)
+        # Scalar function, interpolated to vertices
+        elif f.value_rank() == 0:
+            C = f.compute_vertex_values(mesh)
+            return plt.tricontour(f.triangulation, C, levels=levels, colors=colors)
+    else:
+        # DG0 cellwise function
+        if f.vector().size() == mesh.num_cells():
+            C = f.vector().array()
+            return plt.tricontour(mesh2triang(mesh),  C, levels=levels, colors=colors)
+        # Scalar function, interpolated to vertices
+        elif f.value_rank() == 0:
+            C = f.compute_vertex_values(mesh)
+            return plt.tricontour(mesh2triang(mesh),  C, levels=levels, colors=colors)
+
+
+# Plot a generic dolfin object (if supported)
+def plot(obj):
+    r"""
+        Plots a dolfin object in matplotlib. The following types of objects
+        can be plotted:
+            dolfin.Mesh
+            dolfin.CellFunction
+            dolfin.Function
+                DG0
+                scalar functions interpolated to vertices
+                vector functions interpolated to vertices
+            DolfinFunction
+
+        Usage
+        -----
+        .. code-block :: python
+
+            plot(obj)
+
+
+        Parameters
+        ----------
+        obj : dolfin.Function
+              dolfin.CellFunction (Sizet, Double or Int)
+              dolfin.Mesh
+              DolfinPlot
+              The dolfin object to plot.
+
+        Returns
+        -------
+        obj_plot : matplotlib.collections.PolyCollection (for scalar valued functions)
+                   matplotlib.quiver.Quiver (for vector valued functions)
+                   The matplotlib plot of the object.
+
+        :First Added:   Thu Mar 19 12:47:25 2015
+        :Last Modified: Tue Dec 08 12:47:25 2015
+        :Copyright:     Copyright (C) 2015 crichardson, apalha
+        :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+        Reviews:
+            1. First implementation. (crichardson)
+            2. Added the option to plot DolfinFunction. (apalha, 2015-12-08)
+    """
+    plt.gca().set_aspect('equal')
+
+    if isinstance(obj,DolfinFunction):
+        obj_plot = mplot_function(obj)
+        return obj_plot
+    elif isinstance(obj, dolfin.Function):
+        obj_plot = mplot_function(obj)
+        return obj_plot
+    elif isinstance(obj, dolfin.CellFunctionSizet):
+        obj_plot = mplot_cellfunction(obj)
+        return obj_plot
+    elif isinstance(obj, dolfin.CellFunctionDouble):
+        obj_plot = mplot_cellfunction(obj)
+        return obj_plot
+    elif isinstance(obj, dolfin.CellFunctionInt):
+        obj_plot = mplot_cellfunction(obj)
+        return obj_plot
+    elif isinstance(obj, dolfin.Mesh):
+        if (obj.geometry().dim() != 2):
+            raise AttributeError('Mesh must be 2D')
+        obj_plot = plt.triplot(mesh2triang(obj), color='#808080')
+        return obj_plot
+
+    raise AttributeError('Failed to plot %s'%type(obj))
+
+
+# Plot a generic dolfin object (if supported)
+def contour(obj,levels=None, colors=None):
+    r"""
+        Plots the contour plot of a dolfin object in matplotlib. The following types of objects
+        can be plotted:
+            dolfin.Function
+                scalar functions interpolated to vertices
+            DolfinFunction
+
+        Usage
+        -----
+        .. code-block :: python
+
+            plot(obj,levels=None,colors=None)
+
+
+        Parameters
+        ----------
+        obj : dolfin.Function
+                  scalar functions interpolated to vertices
+              DolfinFunction
+              The dolfin object to plot.
+        levels: numpy.array, size: [1,N] or [N,1]
+                The levels of the contours to plot.
+        colors: string, size: single value
+                Color and line type specification for the contours, as defined in pylab.
+
+        Returns
+        -------
+        obj_plot : matplotlib.collections.PolyCollection (for scalar valued functions)
+                   matplotlib.quiver.Quiver (for vector valued functions)
+                   The matplotlib plot of the object.
+
+        :First Added:   Tue Dec 08 12:47:25 2015
+        :Last Modified: Tue Dec 08 12:47:25 2015
+        :Copyright:     Copyright (C) 2015 crichardson, apalha
+        :License:       GNU GPL version 3 or any later version
+
+    """
+
+    """
+        Reviews:
+            1. First implementation. (apalha, 2015-12-08)
+    """
+
+    if isinstance(obj,DolfinFunction):
+        obj_plot = mcontour_function(obj,levels,colors)
+        return obj_plot
+    elif isinstance(obj, dolfin.Function):
+        obj_plot = mcontour_function(obj,levels,colors)
+        return obj_plot
+
+    raise AttributeError('Failed to plot %s'%type(obj))
 
 
 # ------------------------------------------------------------------------------------------------------- </editor-fold>

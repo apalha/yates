@@ -63,8 +63,8 @@ Contact
 
 The latest version of this software can be obtained from
 
-  `https://bitbucket.org/apalha/yates <https://bitbucket.org/apalha/yates>`_
+  `https://github.com/apalha/yates <https://github.com/apalha/yates>`_
 
 Please report bugs and other issues through the issue tracker at:
 
-  `https://bitbucket.org/apalha/yates/issues?status=new&status=open <https://bitbucket.org/apalha/yates/issues?status=new&status=open>`_
+  `https://github.com/apalha/yates/issues <https://github.com/apalha/yates/issues>`_
